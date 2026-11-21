@@ -1,0 +1,433 @@
+{
+ "kind": "forge-starter",
+ "name": "Block 1 \u00b7 PPL x2",
+ "program": {
+  "days": [
+   {
+    "name": "Push A",
+    "weekday": 1,
+    "notes": "Chest-biased, heavier compounds",
+    "exercises": [
+     {
+      "name": "Barbell bench press",
+      "sets": 4,
+      "repMin": 5,
+      "repMax": 8,
+      "rir": "2-3",
+      "rest": 150,
+      "inc": 5,
+      "notes": ""
+     },
+     {
+      "name": "Standing overhead press",
+      "sets": 3,
+      "repMin": 6,
+      "repMax": 10,
+      "rir": "2-3",
+      "rest": 120,
+      "inc": 5,
+      "notes": "Or seated DB press"
+     },
+     {
+      "name": "Incline DB press",
+      "sets": 3,
+      "repMin": 8,
+      "repMax": 12,
+      "rir": "2",
+      "rest": 90,
+      "inc": 5,
+      "notes": ""
+     },
+     {
+      "name": "Cable lateral raise",
+      "sets": 3,
+      "repMin": 12,
+      "repMax": 15,
+      "rir": "1-2",
+      "rest": 60,
+      "inc": 2.5,
+      "notes": ""
+     },
+     {
+      "name": "Cable pushdown",
+      "sets": 3,
+      "repMin": 8,
+      "repMax": 12,
+      "rir": "1-2",
+      "rest": 60,
+      "inc": 5,
+      "notes": ""
+     },
+     {
+      "name": "Cable fly",
+      "sets": 2,
+      "repMin": 12,
+      "repMax": 15,
+      "rir": "1-2",
+      "rest": 60,
+      "inc": 5,
+      "notes": "Optional if time"
+     }
+    ]
+   },
+   {
+    "name": "Pull A",
+    "weekday": 2,
+    "notes": "Vertical pull + chest-supported row",
+    "exercises": [
+     {
+      "name": "Lat pulldown",
+      "sets": 4,
+      "repMin": 6,
+      "repMax": 10,
+      "rir": "2-3",
+      "rest": 120,
+      "inc": 5,
+      "notes": "Or weighted pull-up"
+     },
+     {
+      "name": "Chest-supported row",
+      "sets": 4,
+      "repMin": 6,
+      "repMax": 10,
+      "rir": "2",
+      "rest": 120,
+      "inc": 5,
+      "notes": "Preferred heavy row (back-friendly)"
+     },
+     {
+      "name": "One-arm DB row",
+      "sets": 3,
+      "repMin": 8,
+      "repMax": 12,
+      "rir": "2",
+      "rest": 90,
+      "inc": 5,
+      "notes": ""
+     },
+     {
+      "name": "Face pull",
+      "sets": 3,
+      "repMin": 12,
+      "repMax": 15,
+      "rir": "1-2",
+      "rest": 60,
+      "inc": 5,
+      "notes": ""
+     },
+     {
+      "name": "EZ-bar curl",
+      "sets": 3,
+      "repMin": 8,
+      "repMax": 12,
+      "rir": "1-2",
+      "rest": 60,
+      "inc": 5,
+      "notes": ""
+     },
+     {
+      "name": "Hammer curl",
+      "sets": 2,
+      "repMin": 10,
+      "repMax": 12,
+      "rir": "1-2",
+      "rest": 60,
+      "inc": 5,
+      "notes": "Optional"
+     }
+    ]
+   },
+   {
+    "name": "Legs A",
+    "weekday": 3,
+    "notes": "Squat/quad bias, controlled hinge",
+    "exercises": [
+     {
+      "name": "Safety-bar squat",
+      "sets": 4,
+      "repMin": 5,
+      "repMax": 8,
+      "rir": "2-3",
+      "rest": 180,
+      "inc": 10,
+      "notes": "Or back squat; hack squat/leg press if the back is unhappy"
+     },
+     {
+      "name": "Romanian deadlift",
+      "sets": 3,
+      "repMin": 6,
+      "repMax": 10,
+      "rir": "2-3",
+      "rest": 150,
+      "inc": 10,
+      "notes": "Or trap-bar RDL"
+     },
+     {
+      "name": "Leg press",
+      "sets": 3,
+      "repMin": 8,
+      "repMax": 12,
+      "rir": "2",
+      "rest": 120,
+      "inc": 10,
+      "notes": ""
+     },
+     {
+      "name": "Seated leg curl",
+      "sets": 3,
+      "repMin": 8,
+      "repMax": 12,
+      "rir": "1-2",
+      "rest": 75,
+      "inc": 5,
+      "notes": ""
+     },
+     {
+      "name": "Standing calf raise",
+      "sets": 3,
+      "repMin": 10,
+      "repMax": 15,
+      "rir": "1-2",
+      "rest": 60,
+      "inc": 10,
+      "notes": ""
+     },
+     {
+      "name": "Pallof press",
+      "sets": 3,
+      "repMin": 8,
+      "repMax": 12,
+      "rir": "-",
+      "rest": 45,
+      "inc": 2.5,
+      "notes": "Per side, or dead bug"
+     }
+    ]
+   },
+   {
+    "name": "Push B",
+    "weekday": 4,
+    "notes": "Shoulder-biased, moderate load",
+    "exercises": [
+     {
+      "name": "Seated overhead press",
+      "sets": 4,
+      "repMin": 5,
+      "repMax": 8,
+      "rir": "2-3",
+      "rest": 150,
+      "inc": 5,
+      "notes": ""
+     },
+     {
+      "name": "Incline machine press",
+      "sets": 3,
+      "repMin": 8,
+      "repMax": 12,
+      "rir": "2",
+      "rest": 90,
+      "inc": 5,
+      "notes": ""
+     },
+     {
+      "name": "Dips",
+      "sets": 3,
+      "repMin": 6,
+      "repMax": 10,
+      "rir": "2",
+      "rest": 90,
+      "inc": 5,
+      "notes": "Assisted if needed, or flat DB press"
+     },
+     {
+      "name": "DB lateral raise",
+      "sets": 3,
+      "repMin": 12,
+      "repMax": 15,
+      "rir": "1-2",
+      "rest": 60,
+      "inc": 2.5,
+      "notes": ""
+     },
+     {
+      "name": "Overhead triceps extension",
+      "sets": 3,
+      "repMin": 8,
+      "repMax": 12,
+      "rir": "1-2",
+      "rest": 60,
+      "inc": 5,
+      "notes": ""
+     },
+     {
+      "name": "Push-ups",
+      "sets": 2,
+      "repMin": 8,
+      "repMax": 25,
+      "rir": "2",
+      "rest": 60,
+      "inc": 0,
+      "notes": "Optional; log reps"
+     }
+    ]
+   },
+   {
+    "name": "Pull B",
+    "weekday": 5,
+    "notes": "Horizontal pull + arms",
+    "exercises": [
+     {
+      "name": "Chest-supported row",
+      "sets": 4,
+      "repMin": 6,
+      "repMax": 10,
+      "rir": "2",
+      "rest": 120,
+      "inc": 5,
+      "notes": ""
+     },
+     {
+      "name": "Neutral-grip pulldown",
+      "sets": 3,
+      "repMin": 8,
+      "repMax": 12,
+      "rir": "2",
+      "rest": 90,
+      "inc": 5,
+      "notes": ""
+     },
+     {
+      "name": "Seated cable row",
+      "sets": 3,
+      "repMin": 10,
+      "repMax": 12,
+      "rir": "2",
+      "rest": 75,
+      "inc": 5,
+      "notes": ""
+     },
+     {
+      "name": "Rear-delt fly",
+      "sets": 3,
+      "repMin": 12,
+      "repMax": 15,
+      "rir": "1-2",
+      "rest": 60,
+      "inc": 2.5,
+      "notes": ""
+     },
+     {
+      "name": "Incline DB curl",
+      "sets": 3,
+      "repMin": 8,
+      "repMax": 12,
+      "rir": "1-2",
+      "rest": 60,
+      "inc": 5,
+      "notes": ""
+     },
+     {
+      "name": "Hammer curl",
+      "sets": 2,
+      "repMin": 10,
+      "repMax": 12,
+      "rir": "1-2",
+      "rest": 60,
+      "inc": 5,
+      "notes": ""
+     },
+     {
+      "name": "45\u00b0 back extension",
+      "sets": 2,
+      "repMin": 10,
+      "repMax": 15,
+      "rir": "2-3",
+      "rest": 60,
+      "inc": 5,
+      "notes": "Optional, light"
+     }
+    ]
+   },
+   {
+    "name": "Legs B",
+    "weekday": 6,
+    "notes": "Posterior chain; no max conventional deadlift this block",
+    "exercises": [
+     {
+      "name": "Trap-bar deadlift",
+      "sets": 4,
+      "repMin": 5,
+      "repMax": 8,
+      "rir": "2-3",
+      "rest": 180,
+      "inc": 10,
+      "notes": "Or hip thrust / belt squat"
+     },
+     {
+      "name": "Bulgarian split squat",
+      "sets": 3,
+      "repMin": 6,
+      "repMax": 10,
+      "rir": "2",
+      "rest": 90,
+      "inc": 5,
+      "notes": "Per leg, or reverse lunge"
+     },
+     {
+      "name": "Lying leg curl",
+      "sets": 3,
+      "repMin": 8,
+      "repMax": 12,
+      "rir": "1-2",
+      "rest": 75,
+      "inc": 5,
+      "notes": ""
+     },
+     {
+      "name": "45\u00b0 back extension",
+      "sets": 3,
+      "repMin": 8,
+      "repMax": 12,
+      "rir": "2-3",
+      "rest": 75,
+      "inc": 5,
+      "notes": "Light"
+     },
+     {
+      "name": "Seated calf raise",
+      "sets": 3,
+      "repMin": 10,
+      "repMax": 15,
+      "rir": "1-2",
+      "rest": 60,
+      "inc": 10,
+      "notes": ""
+     },
+     {
+      "name": "Farmer carry",
+      "sets": 3,
+      "repMin": 1,
+      "repMax": 1,
+      "rir": "-",
+      "rest": 90,
+      "inc": 10,
+      "notes": "30-40 m. Skip if injection site is pressed or back is angry"
+     }
+    ]
+   }
+  ]
+ },
+ "settings": {
+  "blockStart": "2026-11-23",
+  "blockWeeks": 4,
+  "deloadWeek": 4
+ },
+ "targets": {
+  "kcal": 2450,
+  "protein": 200,
+  "fat": 70,
+  "carbs": 255,
+  "steps": 8000,
+  "notes": "Same calories every day incl. Sunday. Zone 2 / easy walking only this block (no sprints or HIIT). Compounds RIR 2-3, isolation RIR 1-2, no failure on spinal-loaded lifts. Flare rule: pain >3/10 or worse next-morning stiffness -> stop that movement; radiating pain, numbness or leg weakness -> stop the session."
+ }
+}
