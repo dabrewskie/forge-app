@@ -1,7 +1,7 @@
 /* Forge — offline workout + body-comp log. All data lives in localStorage on this device. */
 'use strict';
 const KEY = 'forge.v1'; // storage key: never change (keeps existing data)
-const APP_VERSION = 'v3 (2026-11-21)';
+const APP_VERSION = 'v4 (2026-11-21)';
 const WD = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const $ = (s, el = document) => el.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -616,6 +616,8 @@ function renderMore(v) {
     <input type="file" id="impFile" accept="application/json,.json" class="hidden"></div>
   <div class="card"><h3>Plan</h3><div class="row"><button class="grow" id="reStarter">Reload starter plan</button><button class="grow danger" id="wipe">Erase all data</button></div>
     <p class="muted small">Reloading the starter replaces the program and targets only; history and body log stay.</p></div>
+  <details class="card" id="diag"><summary class="muted small">Diagnostics (for troubleshooting)</summary><pre id="diagTxt" style="white-space:pre-wrap;font-size:12px;margin:8px 0">${esc(diagText())}</pre>
+    <button class="grow" id="diagCopy" style="width:100%">Copy diagnostics</button></details>
   <p class="muted small" style="text-align:center">Forge ${APP_VERSION} · offline · no account · no tracking</p>`;
   const mc = () => { const k = (+$('#tP').value || 0) * 4 + (+$('#tF').value || 0) * 9 + (+$('#tC').value || 0) * 4; $('#macroChk').textContent = `Macros add up to ${k} kcal.`; };
   ['#tP','#tF','#tC'].forEach(s => $(s).oninput = mc); mc();
@@ -632,6 +634,7 @@ function renderMore(v) {
   $('#impF').onclick = () => $('#impFile').click();
   $('#impFile').onchange = async e => { const f = e.target.files[0]; if (f) importText(await f.text()); };
   $('#impP').onclick = pasteImport;
+  $('#diagCopy').onclick = () => copyText(diagText(), 'Diagnostics copied');
   $('#reStarter').onclick = () => { if (confirm('Replace the program and targets with the starter plan? History stays.')) loadStarter(); };
   $('#wipe').onclick = () => { if (confirm('Erase ALL Forge data on this device? Export a backup first.') && confirm('Really erase everything?')) { localStorage.removeItem(KEY); S = blank(); render(); } };
 }
@@ -832,44 +835,194 @@ function foodEditor({ food, entry, meal, barcode, note }) {
     };
   });
 }
-/* Barcode scanning (vendored html5-qrcode; works on iOS Safari via getUserMedia) */
-let scanner = null;
-function loadScanLib() {
-  if (window.Html5Qrcode) return Promise.resolve();
-  return new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'vendor/html5-qrcode.min.js'; s.onload = res; s.onerror = () => rej(new Error('scanner library failed to load')); document.head.appendChild(s); });
+function diagText() {
+  const sa = !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches));
+  return [`Forge ${APP_VERSION}`, `UA: ${navigator.userAgent}`, `Standalone (home-screen): ${sa}`, `Secure context: ${window.isSecureContext}`,
+    `getUserMedia: ${!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)}`, `Service worker: ${navigator.serviceWorker && navigator.serviceWorker.controller ? 'active' : 'none'}`,
+    `Scanner lib: ${SCANDBG.lib}`, `Camera: ${SCANDBG.camera} ${SCANDBG.res}`, `Zoom: ${SCANDBG.zoom || '–'} · Focus: ${SCANDBG.focus || '–'}`, `Frames checked: ${SCANDBG.frames}`,
+    `Last scan: ${SCANDBG.lastScan || '–'}`, `Last lookup: ${SCANDBG.lastLookup || '–'}`, `Last error: ${SCANDBG.lastErr || '–'}`].join('\n');
 }
-async function stopScanner() { if (scanner) { try { if (scanner.isScanning) await scanner.stop(); scanner.clear(); } catch (e) {} scanner = null; } }
+/* Barcode scanning v4: own camera pipeline (playsinline/muted video, high-res, continuous focus, zoom)
+   + vendored ZXing (@zxing/library 0.23, Apache-2.0) with TRY_HARDER and retail formats. */
+const SCANDBG = { camera: 'idle', res: '', zoom: '', focus: '', frames: 0, lastErr: '', lastScan: '', lastLookup: '', lib: 'not loaded' };
+let cam = null;
+function loadZXing() {
+  if (window.ZXing && window.ZXing.MultiFormatReader) return Promise.resolve();
+  return new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'vendor/zxing-library.min.js';
+    s.onload = () => { SCANDBG.lib = window.ZXing ? 'loaded' : 'loaded but missing'; window.ZXing ? res() : rej(new Error('scanner library missing')); };
+    s.onerror = () => { SCANDBG.lib = 'FAILED to load'; rej(new Error('scanner library failed to load')); }; document.head.appendChild(s); });
+}
+let zxReader = null;
+function zxDecoder() {
+  if (zxReader) return zxReader; const Z = window.ZXing, F = Z.BarcodeFormat, hints = new Map();
+  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [F.EAN_13, F.UPC_A, F.UPC_E, F.EAN_8, F.CODE_128]);
+  hints.set(Z.DecodeHintType.TRY_HARDER, true);
+  zxReader = new Z.MultiFormatReader(); zxReader.setHints(hints); return zxReader;
+}
+function decodeCanvas(cv, alt) {
+  const Z = window.ZXing;
+  try { const src = new Z.HTMLCanvasElementLuminanceSource(cv); const bin = alt ? new Z.GlobalHistogramBinarizer(src) : new Z.HybridBinarizer(src);
+    return zxDecoder().decodeWithState(new Z.BinaryBitmap(bin)).getText(); }
+  catch (e) { if (e && e.name && !/NotFound|Checksum|Format/i.test(e.name)) SCANDBG.lastErr = 'decode: ' + e.name; return null; }
+}
+const scanCv = document.createElement('canvas');
+/* draw region (sx,sy,sw,sh) of a source into the work canvas, scaled so the long side <= maxSide; rot = rotate 90° */
+function drawRegion(srcEl, sx, sy, sw, sh, maxSide, rot) {
+  const k = Math.min(1, maxSide / Math.max(sw, sh)), w = Math.max(1, Math.round(sw * k)), h = Math.max(1, Math.round(sh * k));
+  scanCv.width = rot ? h : w; scanCv.height = rot ? w : h;
+  const ctx = scanCv.getContext('2d', { willReadFrequently: true });
+  ctx.save(); if (rot) { ctx.translate(h, 0); ctx.rotate(Math.PI / 2); }
+  ctx.drawImage(srcEl, sx, sy, sw, sh, 0, 0, w, h); ctx.restore(); return scanCv;
+}
+function camError(e) {
+  const n = (e && e.name) || '', m = (e && e.message) || String(e);
+  if (/NotAllowed|Security|Permission/i.test(n)) return 'Camera permission is blocked. On iPhone: Settings › Safari › Camera › Allow (or Ask), then fully close and reopen Forge. Meanwhile use “Take photo of barcode”.';
+  if (/NotFound|Overconstrained|DevicesNotFound/i.test(n)) return 'No usable camera was found. Use “Take photo of barcode” or type the number.';
+  if (/NotReadable|TrackStart|Abort/i.test(n)) return 'The camera is busy (another app or tab is using it). Close it and try again, or use “Take photo of barcode”.';
+  if (/library/i.test(m)) return 'The scanner library did not load (' + m + '). Reload Forge once while online.';
+  return 'Camera error: ' + (n ? n + ' – ' : '') + m;
+}
+async function getCamStream() {
+  const tries = [
+    { audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } },
+    { audio: false, video: { facingMode: { ideal: 'environment' } } },
+    { audio: false, video: true }];
+  let last;
+  for (const c of tries) { try { return await navigator.mediaDevices.getUserMedia(c); } catch (e) { last = e; if (/NotAllowed|Security/i.test(e.name)) throw e; } }
+  throw last;
+}
+function stopScanner() {
+  if (!cam) return; cam.stopped = true; clearTimeout(cam.timer);
+  try { cam.stream && cam.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+  try { if (cam.video) { cam.video.pause(); cam.video.srcObject = null; } } catch (e) {}
+  cam = null; if (SCANDBG.camera !== 'error') SCANDBG.camera = 'stopped';
+}
+async function applyZoom(track, z) { try { await track.applyConstraints({ advanced: [{ zoom: z }] }); SCANDBG.zoom = z + '×'; return true; } catch (e) { SCANDBG.zoom = 'zoom failed: ' + e.name; return false; } }
 function openScanner() {
-  openSheet(`<h2>Scan barcode</h2><div class="muted small">Point the back camera at the barcode. Allow camera access if asked.</div>
-    <div id="reader" style="width:100%;min-height:220px;margin-top:8px;border-radius:12px;overflow:hidden;background:#000"></div>
-    <div class="muted small" id="scanMsg" style="margin-top:6px">Starting camera…</div>
-    <label>Or type the barcode number</label><div class="row"><input id="bcIn" class="grow" inputmode="numeric" placeholder="e.g. 049000028911"><button class="primary" id="bcGo">Look up</button></div>
-    <div class="row" style="margin-top:10px"><button class="ghost grow" id="scX">Close</button></div>`, async sh => {
-    const close = async () => { await stopScanner(); closeSheet(); };
-    $('#scX', sh).onclick = close;
-    const go = async code => { code = String(code).replace(/\D/g, ''); if (code.length < 6) return toast('That barcode looks too short'); await stopScanner(); closeSheet(); lookupBarcode(code); };
+  openSheet(`<h2>Scan barcode</h2>
+    <div class="muted small">Hold the barcode flat, in good light, about 6–10 in (15–25 cm) from the phone. iPhones can't focus right up close.</div>
+    <div id="reader"><div id="scanGuide"></div><div id="scanTapPlay" class="hidden">Tap to start camera</div></div>
+    <div class="row" style="margin-top:6px"><button class="grow" id="scZoom" disabled>Zoom</button><button class="grow hidden" id="scTorch">Light</button></div>
+    <div class="small" id="scanMsg" role="status" style="margin-top:6px">Starting camera…</div>
+    <div class="row" style="margin-top:8px"><button class="primary grow" id="scPhoto">📷 Take photo of barcode</button></div>
+    <input type="file" id="scPhotoIn" accept="image/*" capture="environment" class="hidden">
+    <label>Or type the barcode number</label><div class="row"><input id="bcIn" class="grow" inputmode="numeric" autocomplete="off" placeholder="e.g. 049000028911"><button class="primary" id="bcGo">Look up</button></div>
+    <div class="row" style="margin-top:10px"><button class="ghost grow" id="scX">Close</button></div>`, sh => {
+    const msg = (t, bad) => { const m = $('#scanMsg'); if (m) { m.textContent = t; m.classList.toggle('bad', !!bad); } };
+    const go = code => { code = String(code).replace(/\D/g, ''); if (code.length < 6) return toast('That barcode looks too short'); stopScanner(); closeSheet(); lookupBarcode(code); };
+    $('#scX', sh).onclick = closeSheet;
     $('#bcGo', sh).onclick = () => go($('#bcIn', sh).value);
     $('#bcIn', sh).onkeydown = e => { if (e.key === 'Enter') go(e.target.value); };
-    try {
-      await loadScanLib();
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Camera not available here');
-      const F = window.Html5QrcodeSupportedFormats;
-      scanner = new window.Html5Qrcode('reader', { formatsToSupport: [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128], verbose: false });
-      await scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: (w, h) => ({ width: Math.min(300, w * 0.85), height: Math.min(160, h * 0.6) }), aspectRatio: 1.333 },
-        text => { if (navigator.vibrate) navigator.vibrate(60); go(text); }, () => {});
-      const m = $('#scanMsg'); if (m) m.textContent = 'Scanning… hold steady, fill the box with the barcode.';
-    } catch (e) {
-      const m = $('#scanMsg'); if (m) m.textContent = `Camera unavailable (${(e && (e.message || e.name)) || e}). Type the number below instead. On iPhone: Settings › Safari › Camera › Allow.`;
+    $('#scPhoto', sh).onclick = () => { stopScanner(); msg('Camera paused for photo. Take a close, sharp photo of just the barcode.'); $('#scPhotoIn', sh).click(); };
+    $('#scPhotoIn', sh).onchange = async e => {
+      const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+      msg('Reading photo…');
+      try { await loadZXing(); const code = await decodeImageFile(f);
+        if (code) { SCANDBG.lastScan = code + ' (photo)'; if (navigator.vibrate) navigator.vibrate(60); go(code); }
+        else { SCANDBG.lastErr = 'photo: no barcode found'; msg('No barcode found in that photo. Retake it closer and sharper (barcode filling most of the photo, flat, no glare), or type the number below.', true); }
+      } catch (err) { SCANDBG.lastErr = 'photo: ' + (err.message || err.name); msg(camError(err), true); }
+    };
+    // Start the camera right away, inside the tap that opened this sheet (iOS likes getUserMedia/play tied to a gesture).
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      SCANDBG.camera = 'error'; SCANDBG.lastErr = 'no mediaDevices.getUserMedia'; msg('Live camera isn\'t available here. Use “Take photo of barcode” or type the number.', true); return;
     }
+    const me = cam = { stopped: false, frames: 0, t0: Date.now() };
+    SCANDBG.camera = 'requesting'; SCANDBG.frames = 0;
+    const streamP = getCamStream(); const libP = loadZXing(); libP.catch(() => {});
+    (async () => {
+      let stream;
+      try { stream = await streamP; } catch (e) { SCANDBG.camera = 'error'; SCANDBG.lastErr = 'getUserMedia: ' + (e.name || '') + ' ' + (e.message || ''); if (cam === me) msg(camError(e), true); return; }
+      if (me.stopped) { stream.getTracks().forEach(t => t.stop()); return; }
+      me.stream = stream;
+      const v = document.createElement('video');
+      v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.setAttribute('muted', ''); v.setAttribute('autoplay', '');
+      v.muted = true; v.playsInline = true; v.autoplay = true; v.srcObject = stream; me.video = v;
+      const rd = $('#reader'); if (!rd) return stopScanner(); rd.prepend(v);
+      const tryPlay = () => v.play().then(() => $('#scanTapPlay') && $('#scanTapPlay').classList.add('hidden')).catch(err => { SCANDBG.lastErr = 'video.play: ' + err.name; $('#scanTapPlay') && $('#scanTapPlay').classList.remove('hidden'); });
+      rd.onclick = tryPlay; tryPlay();
+      SCANDBG.camera = 'streaming';
+      const track = stream.getVideoTracks()[0];
+      try {
+        const caps = track.getCapabilities ? track.getCapabilities() : {};
+        if (caps.focusMode && caps.focusMode.includes('continuous')) { await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).then(() => SCANDBG.focus = 'continuous').catch(e => SCANDBG.focus = 'failed ' + e.name); } else SCANDBG.focus = 'n/a';
+        if (caps.zoom && caps.zoom.max > 1) {
+          const zs = [1, 1.5, 2, 3].filter(z => z >= (caps.zoom.min || 1) && z <= caps.zoom.max); let zi = zs.indexOf(1.5) >= 0 ? zs.indexOf(1.5) : 0;
+          await applyZoom(track, zs[zi]);
+          const zb = $('#scZoom'); if (zb) { zb.disabled = false; zb.textContent = `Zoom ${zs[zi]}×`; zb.onclick = async () => { zi = (zi + 1) % zs.length; await applyZoom(track, zs[zi]); zb.textContent = `Zoom ${zs[zi]}×`; }; }
+        } else { SCANDBG.zoom = 'n/a'; const zb = $('#scZoom'); if (zb) zb.classList.add('hidden'); }
+        if (caps.torch) { const tb = $('#scTorch'); let on = false; if (tb) { tb.classList.remove('hidden'); tb.onclick = async () => { on = !on; try { await track.applyConstraints({ advanced: [{ torch: on }] }); tb.textContent = on ? 'Light off' : 'Light'; } catch (e) {} }; } }
+      } catch (e) { SCANDBG.lastErr = 'track tweaks: ' + e.name; }
+      try { await libP; } catch (e) { SCANDBG.camera = 'error'; SCANDBG.lastErr = e.message; msg(camError(e), true); return; }
+      msg('Scanning… line the barcode up inside the box.');
+      let n = 0, lastShown = 0;
+      const tick = () => {
+        if (me.stopped) return;
+        const vw = v.videoWidth, vh = v.videoHeight;
+        if (v.readyState >= 2 && vw && vh) {
+          SCANDBG.res = `${vw}×${vh}`;
+          if (v.paused) tryPlay();
+          // cycle: centre band at native res / whole frame / rotated band (barcode held sideways) / downscaled band (helps slight blur); alternate binarizers
+          const mode = n % 4, alt = Math.floor(n / 4) % 2 === 1;
+          let cv;
+          if (mode === 0) { const bw = vw * 0.92, bh = Math.min(vh, vw < vh ? vh * 0.42 : vh * 0.7); cv = drawRegion(v, (vw - bw) / 2, (vh - bh) / 2, bw, bh, 1400, false); }
+          else if (mode === 1) cv = drawRegion(v, 0, 0, vw, vh, 1280, false);
+          else if (mode === 3) { const bw = vw * 0.92, bh = Math.min(vh, vw < vh ? vh * 0.42 : vh * 0.7); cv = drawRegion(v, (vw - bw) / 2, (vh - bh) / 2, bw, bh, 720, false); }
+          else { const bh = vh * 0.92, bw = Math.min(vw, vw < vh ? vw * 0.7 : vw * 0.42); cv = drawRegion(v, (vw - bw) / 2, (vh - bh) / 2, bw, bh, 1400, true); }
+          const code = decodeCanvas(cv, alt);
+          n++; SCANDBG.frames = n;
+          if (code) { SCANDBG.lastScan = code + ' (live)'; if (navigator.vibrate) navigator.vibrate(60); return go(code); }
+          const secs = (Date.now() - me.t0) / 1000;
+          if (n - lastShown >= 15) { lastShown = n; msg(`Scanning… ${SCANDBG.res}${SCANDBG.zoom && SCANDBG.zoom !== 'n/a' ? ' · zoom ' + SCANDBG.zoom : ''} · ${n} frames checked${secs > 12 ? '. Not reading? Move back a little, try Zoom, or use “Take photo of barcode”.' : ''}`); }
+        } else if (Date.now() - me.t0 > 6000 && !me.warned) { me.warned = true; msg('The camera opened but no video frames are arriving. Tap the camera area, or use “Take photo of barcode”.', true); }
+        me.timer = setTimeout(tick, 60);
+      };
+      tick();
+    })();
   });
+}
+async function loadImage(file) {
+  if (window.createImageBitmap) { try { return await createImageBitmap(file); } catch (e) {} }
+  return await new Promise((res, rej) => { const u = URL.createObjectURL(file), im = new Image(); im.onload = () => { res(im); setTimeout(() => URL.revokeObjectURL(u), 1000); }; im.onerror = () => rej(new Error('could not open that image')); im.src = u; });
+}
+async function decodeImageFile(file) {
+  const img = await loadImage(file), W = img.width || img.naturalWidth, H = img.height || img.naturalHeight;
+  const L = Math.max(W, H);
+  const sizes = [1600, 1000, 2400, 700].filter((s, i) => i === 0 || s < L * 1.1);
+  for (const s of sizes) for (const rot of [false, true]) for (const alt of [false, true]) {
+    let c = decodeCanvas(drawRegion(img, 0, 0, W, H, s, rot), alt); if (c) return c;
+    // centre band (barcode usually in the middle)
+    const bw = W * 0.9, bh = H * 0.5; c = decodeCanvas(drawRegion(img, (W - bw) / 2, (H - bh) / 2, bw, bh, s, rot), alt); if (c) return c;
+    await new Promise(r => setTimeout(r, 0));
+  }
+  return null;
+}
+function upcEtoA(e) {
+  if (!/^[01]\d{7}$/.test(e)) return null; const ns = e[0], d = e.slice(1, 7), ck = e[7], l = d[5]; let m;
+  if ('012'.includes(l)) m = d[0] + d[1] + l + '0000' + d[2] + d[3] + d[4];
+  else if (l === '3') m = d[0] + d[1] + d[2] + '00000' + d[3] + d[4];
+  else if (l === '4') m = d[0] + d[1] + d[2] + d[3] + '00000' + d[4];
+  else m = d[0] + d[1] + d[2] + d[3] + d[4] + '0000' + l;
+  return ns + m + ck;
+}
+function codeVariants(code) {
+  const v = [code];
+  if (code.length === 8) { const a = upcEtoA(code); if (a) v.push(a, '0' + a); }
+  if (code.length === 12) v.push('0' + code);
+  if (code.length === 13 && code[0] === '0') v.push(code.slice(1));
+  if (code.length === 14 && code[0] === '0') v.push(code.slice(1));
+  return [...new Set(v)];
 }
 function offNum(n, key, basis) { const v = n[`${key}_${basis}`]; return v == null || v === '' ? null : +v; }
 async function fetchOFF(code) {
-  const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,serving_size,serving_quantity,nutriments`);
-  if (r.status === 404) return null;
-  if (!r.ok) throw new Error('lookup failed (' + r.status + ')');
-  const j = await r.json(); if (!j || j.status !== 1 || !j.product) return null;
-  return j.product;
+  const ctl = window.AbortController ? new AbortController() : null, to = ctl && setTimeout(() => ctl.abort(), 12000);
+  try {
+    const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,serving_size,serving_quantity,nutriments`, ctl ? { signal: ctl.signal } : {});
+    if (r.status === 404) return null;
+    if (!r.ok) throw new Error('Open Food Facts answered ' + r.status + (r.status === 429 ? ' (too many requests, wait a minute)' : ''));
+    const j = await r.json(); if (!j || j.status !== 1 || !j.product) return null;
+    return j.product;
+  } catch (e) { if (e.name === 'AbortError') throw new Error('lookup timed out'); if (e instanceof TypeError) throw new Error('network error (offline or blocked)'); throw e; }
+  finally { to && clearTimeout(to); }
 }
 function foodFromOFF(code, p) {
   const n = p.nutriments || {};
@@ -882,17 +1035,23 @@ function foodFromOFF(code, p) {
   return { name, basis: 'serving', kcal: '', p: '', f: '', c: '', servingText: p.serving_size || '', barcode: code, source: 'openfoodfacts' };
 }
 async function lookupBarcode(code) {
-  const local = S.food.foods.find(x => x.barcode === code);
+  const vars = codeVariants(code);
+  const local = S.food.foods.find(x => x.barcode && vars.includes(x.barcode));
   if (local) return foodEditor({ food: local, meal: defaultMeal(), note: 'Found in your saved foods.' });
   toast('Looking up ' + code + '…');
-  try {
-    const p = await fetchOFF(code);
-    if (!p) return foodEditor({ barcode: code, meal: defaultMeal(), note: 'Not found in Open Food Facts. Enter the label numbers once; it is saved for next time.' });
-    const f = foodFromOFF(code, p);
-    foodEditor({ food: f, meal: defaultMeal(), note: f.kcal === '' ? 'Found the product but no nutrition numbers. Enter them from the label.' : `From Open Food Facts (check against the label). Numbers are per ${f.basis === '100g' ? '100 g' : f.servingText || 'serving'}.` });
-  } catch (e) {
-    foodEditor({ barcode: code, meal: defaultMeal(), note: 'Could not reach Open Food Facts (offline?). Enter the label numbers; it is saved for next time.' });
+  let err = null;
+  for (const c of vars) {
+    try {
+      const p = await fetchOFF(c);
+      if (!p) continue;
+      SCANDBG.lastLookup = `${code} → found as ${c}`;
+      const f = foodFromOFF(code, p);
+      return foodEditor({ food: f, meal: defaultMeal(), note: f.kcal === '' ? 'Found the product but no nutrition numbers. Enter them from the label.' : `From Open Food Facts (check against the label). Numbers are per ${f.basis === '100g' ? '100 g' : f.servingText || 'serving'}.` });
+    } catch (e) { err = e; }
   }
+  SCANDBG.lastLookup = `${code} (tried ${vars.join(', ')}): ${err ? 'error ' + err.message : 'not found'}`;
+  if (err) { SCANDBG.lastErr = 'lookup: ' + err.message; return foodEditor({ barcode: code, meal: defaultMeal(), note: `Barcode read OK (${code}), but the lookup failed: ${err.message}. Enter the label numbers; it is saved for next time.` }); }
+  foodEditor({ barcode: code, meal: defaultMeal(), note: `Barcode read OK (${code}), but it isn't in Open Food Facts. Enter the label numbers once; it is saved for next time.` });
 }
 /* Photo meal → share sheet to Ash; paste back a FORGE-FOOD line */
 const PHOTO_PROMPT = 'Forge: estimate this meal. Reply with one line: FORGE-FOOD: name | kcal | P F C  (e.g. FORGE-FOOD: Chicken bowl | 650 kcal | 55P 20F 60C)';
@@ -975,5 +1134,5 @@ window.addEventListener('hashchange', () => { hashImport(); render(); });
 (function boot() {
   hashImport();
   render();
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
+  if (navigator.serviceWorker && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
 })();
