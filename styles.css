@@ -45,13 +45,16 @@ label{display:block;font-size:13px;color:var(--muted);margin:8px 0 4px}
 .ex-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
 .ex-meta{color:var(--muted);font-size:14px;margin-top:2px}
 .suggest{color:var(--accent2);font-size:14px;margin-top:4px}
-.set{display:grid;grid-template-columns:34px 1fr 1fr 64px 56px;gap:6px;align-items:center;margin-top:8px}
+.set{display:grid;grid-template-columns:30px 1fr 1fr 56px 72px;gap:6px;align-items:center;margin-top:8px}
 .set .n{color:var(--muted);text-align:center;font-weight:700}
 .set input{text-align:center;padding:6px 4px}
-.set .chk{min-width:0;padding:0;font-size:22px}
+.set .chk{min-width:0;padding:0;font-size:16px;background:var(--card2);border-color:var(--accent);color:var(--accent);touch-action:manipulation}
+.set.logged .chk{font-size:22px}
+button{touch-action:manipulation}
+body.timing main{padding-bottom:170px}
 .set.logged .chk{background:var(--ok);border-color:var(--ok);color:#04210f}
 .set.logged input{border-color:var(--ok)}
-.sethdr{display:grid;grid-template-columns:34px 1fr 1fr 64px 56px;gap:6px;color:var(--muted);font-size:12px;text-align:center;margin-top:8px}
+.sethdr{display:grid;grid-template-columns:30px 1fr 1fr 56px 72px;gap:6px;color:var(--muted);font-size:12px;text-align:center;margin-top:8px}
 .list-item{display:flex;align-items:center;gap:8px;padding:10px 0;border-top:1px solid var(--line)}
 .list-item:first-child{border-top:0}
 .hidden{display:none!important}

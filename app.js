@@ -1,6 +1,7 @@
 /* Forge — offline workout + body-comp log. All data lives in localStorage on this device. */
 'use strict';
-const KEY = 'forge.v1';
+const KEY = 'forge.v1'; // storage key: never change (keeps existing data)
+const APP_VERSION = 'v2 (2026-11-21)';
 const WD = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const $ = (s, el = document) => el.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -226,6 +227,7 @@ function renderToday(v) {
     plan.exercises.forEach((ex, i) => { h += exerciseCard(ex, i, date, s); });
     h += `<div class="row"><button class="grow" id="addToday">+ Add exercise (today only)</button></div>`;
     h += `<div class="card" style="margin-top:12px"><label>Session notes</label><textarea id="sNotes" style="min-height:70px;font-family:inherit;font-size:16px" placeholder="How it felt, pain, sleep…">${esc(s ? s.notes : '')}</textarea></div>`;
+    h += `<div class="card" id="finishCard">${finishCardInner(date)}</div>`;
   }
   h += dailyCard(date);
   v.innerHTML = h;
@@ -239,7 +241,44 @@ function renderToday(v) {
   $('#sNotes') && ($('#sNotes').onchange = e => { const p = planFor(date); const ss = ensureSession(date, p); ss.notes = e.target.value; save(); });
   bindExerciseCards(v, date);
   bindDaily(date);
+  bindFinish(date);
 }
+const doneCount = s => s ? s.entries.reduce((a, e) => a + e.sets.filter(t => t.done).length, 0) : 0;
+function finishCardInner(date) {
+  const s = sessionFor(date), n = doneCount(s);
+  if (s && s.completedAt) return `<h3>Session complete ✓</h3><div class="muted small">${n} sets saved on this phone · finished ${new Date(s.completedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>
+    <div class="row" style="margin-top:10px"><button class="primary grow" id="sendLog">Send log to Forge</button></div>
+    <div class="row" style="margin-top:8px"><button class="ghost grow" id="reopenS">Reopen session</button></div>`;
+  return `<div class="muted small">${n} set${n === 1 ? '' : 's'} marked done. Tap Done on each set as you go, then finish.</div>
+    <div class="row" style="margin-top:10px"><button class="primary grow" id="finishS">Finish session</button></div>`;
+}
+function refreshFinish(date) { const c = $('#finishCard'); if (c) { c.innerHTML = finishCardInner(date); bindFinish(date); } }
+function bindFinish(date) {
+  const f = $('#finishS'), r = $('#reopenS'), sl = $('#sendLog');
+  if (f) f.onclick = () => {
+    const plan = planFor(date); if (plan.type !== 'train') return;
+    // Save any typed-but-unchecked sets if the user wants them counted
+    const pending = [...document.querySelectorAll('.set:not(.logged)')].filter(row => $('.r', row).value.trim() !== '' && $('.w', row).value.trim() !== '');
+    const s = ensureSession(date, plan);
+    if (pending.length && confirm(`Also log the ${pending.length} set${pending.length === 1 ? '' : 's'} not marked Done, as shown on screen?`)) {
+      pending.forEach(row => { const ex = plan.exercises[+row.dataset.ex], k = +row.dataset.k, e = entryFor(s, ex);
+        while (e.sets.length <= k) e.sets.push({ w: null, r: null, rir: null, done: false });
+        Object.assign(e.sets[k], { w: num($('.w', row).value), r: num($('.r', row).value), rir: num($('.q', row).value), done: true, t: new Date().toISOString() }); });
+    }
+    if (!doneCount(s)) { toast('No sets marked Done yet'); save(); return; }
+    const notes = $('#sNotes'); if (notes) s.notes = notes.value;
+    s.completedAt = new Date().toISOString(); save();
+    clearInterval(tInt); $('#timer').classList.add('hidden'); document.body.classList.remove('timing');
+    render(); toast('Session saved'); setTimeout(() => { const c = $('#finishCard'); c && c.scrollIntoView({ block: 'center' }); }, 50);
+  };
+  if (r) r.onclick = () => { const s = sessionFor(date); if (s) { delete s.completedAt; save(); } render(); };
+  if (sl) sl.onclick = sendLog;
+}
+async function shareOrCopy(text, title) {
+  if (navigator.share) { try { await navigator.share({ title, text }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+  copyText(text, 'Copied — paste it to Forge');
+}
+function sendLog() { shareOrCopy(summary(), 'Forge log'); }
 function oneOff(date) {
   const p = planFor(date);
   const o = S.overrides[date] || { dayId: p.day.id };
@@ -260,7 +299,7 @@ function exerciseCard(ex, i, date, s) {
       <input inputmode="decimal" class="w" value="${pw ?? ''}" placeholder="lb" aria-label="weight">
       <input inputmode="numeric" class="r" value="${pr ?? ''}" placeholder="reps" aria-label="reps">
       <input inputmode="decimal" class="q" value="${st && st.rir != null ? st.rir : ''}" placeholder="RIR" aria-label="RIR">
-      <button class="chk" aria-label="log set">${st && st.done ? '✓' : '○'}</button></div>`;
+      <button class="chk" aria-label="mark set done">${st && st.done ? '✓' : 'Done'}</button></div>`;
   }
   return `<div class="card" data-card="${i}"><div class="ex-head"><div class="grow">
       <h3>${esc(ex.name)}</h3>
@@ -287,10 +326,11 @@ function bindExerciseCards(v, date) {
     $('.chk', row).onclick = () => {
       const was = row.classList.contains('logged');
       const st = persist(!was);
-      row.classList.toggle('logged', st.done); $('.chk', row).textContent = st.done ? '✓' : '○';
+      row.classList.toggle('logged', st.done); $('.chk', row).textContent = st.done ? '✓' : 'Done';
+      refreshFinish(date);
       if (st.done) { startTimer(ex.rest); if (navigator.vibrate) navigator.vibrate(30); }
     };
-    row.querySelectorAll('input').forEach(inp => inp.onchange = () => { if (row.classList.contains('logged')) persist(); });
+    row.querySelectorAll('input').forEach(inp => inp.onchange = () => persist());
   });
   v.querySelectorAll('[data-act]').forEach(b => {
     const ex = plan.exercises[+b.dataset.ex];
@@ -532,16 +572,17 @@ function chart(canvas, series, ref) {
 /* ---------- History ---------- */
 function renderHistory(v) {
   $('#subtitle').textContent = `${S.sessions.filter(s => s.entries.some(e => e.sets.some(t => t.done))).length} sessions`;
-  const list = [...S.sessions].reverse();
-  v.innerHTML = list.map(s => {
+  const list = [...S.sessions].filter(s => s.completedAt || s.entries.some(e => e.sets.some(t => t.done))).reverse();
+  v.innerHTML = `<div class="row" style="margin-bottom:12px"><button class="primary grow" id="hSend">Send last 7 days to Forge</button></div>` + list.map(s => {
     const done = s.entries.map(e => ({ name: e.name, sets: e.sets.filter(t => t.done) })).filter(e => e.sets.length);
     const vol = done.reduce((a, e) => a + e.sets.reduce((b, t) => b + (t.w || 0) * (t.r || 0), 0), 0);
-    return `<div class="card"><div class="spread"><div><h3>${fmtDate(s.date)} · ${esc(s.dayName)}</h3><div class="muted small">${s.date} · ${done.reduce((a, e) => a + e.sets.length, 0)} sets · ${Math.round(vol).toLocaleString()} lb volume</div></div>
+    return `<div class="card"><div class="spread"><div><h3>${fmtDate(s.date)} · ${esc(s.dayName)}</h3><div class="muted small">${s.completedAt ? '✓ complete · ' : ''}${s.date} · ${done.reduce((a, e) => a + e.sets.length, 0)} sets · ${Math.round(vol).toLocaleString()} lb volume</div></div>
       <button data-open="${s.date}">Open</button></div>
       <details><summary class="muted small">Details</summary>${done.map(e => `<div class="small" style="margin:4px 0"><b>${esc(e.name)}</b>: ${e.sets.map(t => `${t.w ?? 'BW'}×${t.r ?? '–'}${t.rir != null ? ' @' + t.rir : ''}`).join(', ')}</div>`).join('')}
       ${s.notes ? `<div class="muted small">Notes: ${esc(s.notes)}</div>` : ''}
       <button class="ghost danger small" data-delS="${s.id}">Delete session</button></details></div>`;
   }).join('') || '<div class="card muted">No sessions logged yet. Log a set on the Today tab.</div>';
+  $('#hSend').onclick = sendLog;
   v.querySelectorAll('[data-open]').forEach(b => b.onclick = () => { curDate = b.dataset.open; tab = 'today'; render(); });
   v.querySelectorAll('[data-dels]').forEach(b => b.onclick = () => { if (!confirm('Delete this session?')) return; S.sessions = S.sessions.filter(s => s.id !== b.dataset.dels); save(); render(); });
 }
@@ -562,8 +603,9 @@ function renderMore(v) {
     <div><label>Deload week #</label><input id="sDW" inputmode="numeric" value="${st.deloadWeek}"></div><div><label>Default rest (sec)</label><input id="sRest" inputmode="numeric" value="${st.defaultRest}"></div></div>
     <label>Theme</label><select id="sTheme">${['dark','light','auto'].map(x => `<option ${st.theme === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
     <div class="row" style="margin-top:8px"><button class="grow" id="sSave">Save settings</button></div></div>
-  <div class="card"><h3>Send to Forge</h3><p class="muted small">Copies a short text summary of the last 7 days to paste into chat.</p>
-    <div class="row"><button class="primary grow" id="copySum">Copy summary</button></div></div>
+  <div class="card"><h3>Send to Forge</h3><p class="muted small">Your log lives only on this phone. These open the share sheet (Messages, Mail, etc.) or copy to the clipboard.</p>
+    <div class="row"><button class="primary grow" id="sendSum">Send last 7 days</button></div>
+    <div class="row" style="margin-top:8px"><button class="grow" id="sendAll">Send full backup</button><button class="grow" id="copySum">Copy summary</button></div></div>
   <div class="card"><h3>Backup</h3><p class="muted small">Data lives only on this device. Export a backup weekly. Last saved ${S.updated ? new Date(S.updated).toLocaleString() : '–'}.</p>
     <div class="row"><button class="grow" id="expJ">Export JSON</button><button class="grow" id="copyJ">Copy JSON</button></div>
     <div class="row" style="margin-top:8px"><button class="grow" id="expC">Export CSV (sets)</button><button class="grow" id="expB">CSV (body)</button></div>
@@ -571,12 +613,14 @@ function renderMore(v) {
     <input type="file" id="impFile" accept="application/json,.json" class="hidden"></div>
   <div class="card"><h3>Plan</h3><div class="row"><button class="grow" id="reStarter">Reload starter plan</button><button class="grow danger" id="wipe">Erase all data</button></div>
     <p class="muted small">Reloading the starter replaces the program and targets only; history and body log stay.</p></div>
-  <p class="muted small" style="text-align:center">Forge · offline · no account · no tracking</p>`;
+  <p class="muted small" style="text-align:center">Forge ${APP_VERSION} · offline · no account · no tracking</p>`;
   const mc = () => { const k = (+$('#tP').value || 0) * 4 + (+$('#tF').value || 0) * 9 + (+$('#tC').value || 0) * 4; $('#macroChk').textContent = `Macros add up to ${k} kcal.`; };
   ['#tP','#tF','#tC'].forEach(s => $(s).oninput = mc); mc();
   $('#tSave').onclick = () => { Object.assign(S.targets, { kcal: num($('#tK').value), protein: num($('#tP').value), fat: num($('#tF').value), carbs: num($('#tC').value), steps: num($('#tS').value), goalWeight: num($('#tG').value), notes: $('#tN').value }); save(); toast('Targets saved'); };
   $('#sSave').onclick = () => { Object.assign(S.settings, { blockStart: $('#sBS').value, blockWeeks: +$('#sBW').value || 4, deloadWeek: +$('#sDW').value || 4, defaultRest: +$('#sRest').value || 120, theme: $('#sTheme').value }); save(); render(); toast('Settings saved'); };
   $('#copySum').onclick = () => copyText(summary(), 'Summary copied');
+  $('#sendSum').onclick = sendLog;
+  $('#sendAll').onclick = () => download(`forge-backup-${today()}.json`, JSON.stringify(S, null, 1), 'application/json');
   $('#expJ').onclick = () => download(`forge-backup-${today()}.json`, JSON.stringify(S, null, 1), 'application/json');
   $('#copyJ').onclick = () => copyText(JSON.stringify(S), 'Backup JSON copied');
   $('#expC').onclick = () => download(`forge-sets-${today()}.csv`, setsCsv(), 'text/csv');
@@ -647,7 +691,7 @@ function summary() {
   const av = k => { const v = dl.map(x => x[k]).filter(x => x != null); return v.length ? Math.round(v.reduce((p, q) => p + q, 0) / v.length) : null; };
   lines.push(`Avg steps ${av('steps') ?? '–'} · protein ${av('protein') ?? '–'} g · kcal ${av('kcal') ?? '–'} · Zone 2 total ${dl.reduce((p, x) => p + (x.z2 || 0), 0)} min`);
   lines.push(`Sessions: ${ss.filter(s => s.entries.some(e => e.sets.some(t => t.done))).length}`);
-  ss.forEach(s => { const parts = s.entries.map(e => { const d = e.sets.filter(t => t.done); if (!d.length) return null; const top = d.reduce((m, t) => (t.w || 0) > (m.w || 0) ? t : m, d[0]); return `${e.name} ${top.w ?? 'BW'}×${top.r ?? '–'}${d.length > 1 ? ` (${d.length} sets)` : ''}`; }).filter(Boolean);
+  ss.forEach(s => { const parts = s.entries.map(e => { const d = e.sets.filter(t => t.done); if (!d.length) return null; const top = d.reduce((m, t) => (t.w || 0) > (m.w || 0) ? t : m, d[0]); return `${e.name} ${d.map(t => `${t.w ?? 'BW'}×${t.r ?? '–'}${t.rir != null ? '@' + t.rir : ''}`).join(', ')}`; }).filter(Boolean);
     if (parts.length) lines.push(`- ${fmtDate(s.date)} ${s.dayName}: ${parts.join('; ')}${s.notes ? ' | ' + s.notes : ''}`); });
   return lines.join('\n');
 }
@@ -656,17 +700,17 @@ function summary() {
 let tEnd = 0, tInt = null, actx = null;
 function startTimer(sec) {
   try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume && actx.resume(); } catch (e) {}
-  tEnd = Date.now() + sec * 1000; $('#timer').classList.remove('hidden', 'done'); tick(); clearInterval(tInt); tInt = setInterval(tick, 250);
+  tEnd = Date.now() + sec * 1000; $('#timer').classList.remove('hidden', 'done'); document.body.classList.add('timing'); tick(); clearInterval(tInt); tInt = setInterval(tick, 250);
 }
 function tick() {
   const left = Math.round((tEnd - Date.now()) / 1000);
-  if (left <= 0) { $('#tDisplay').textContent = 'Go'; $('#timer').classList.add('done'); clearInterval(tInt); beep(); if (navigator.vibrate) navigator.vibrate([200, 100, 200]); setTimeout(() => { if (Date.now() > tEnd) $('#timer').classList.add('hidden'); }, 8000); return; }
+  if (left <= 0) { $('#tDisplay').textContent = 'Go'; $('#timer').classList.add('done'); clearInterval(tInt); beep(); if (navigator.vibrate) navigator.vibrate([200, 100, 200]); setTimeout(() => { if (Date.now() > tEnd) { $('#timer').classList.add('hidden'); document.body.classList.remove('timing'); } }, 8000); return; }
   $('#tDisplay').textContent = fmtTime(left);
 }
 function beep() { try { const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(actx.destination); g.gain.setValueAtTime(0.25, actx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.6); o.start(); o.stop(actx.currentTime + 0.6); } catch (e) {} }
 $('#tPlus').onclick = () => { tEnd = Math.max(tEnd, Date.now()) + 15000; $('#timer').classList.remove('done'); clearInterval(tInt); tInt = setInterval(tick, 250); tick(); };
 $('#tMinus').onclick = () => { tEnd -= 15000; tick(); };
-$('#tStop').onclick = () => { clearInterval(tInt); $('#timer').classList.add('hidden'); };
+$('#tStop').onclick = () => { clearInterval(tInt); $('#timer').classList.add('hidden'); document.body.classList.remove('timing'); };
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !$('#timer').classList.contains('hidden')) tick(); });
 
 /* ---------- Boot ---------- */
@@ -679,5 +723,5 @@ window.addEventListener('hashchange', () => { hashImport(); render(); });
 (function boot() {
   hashImport();
   render();
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
 })();
