@@ -10,4 +10,4 @@ Static files only (HTML/CSS/JS + service worker). Host anywhere that serves stat
 
 Deploy: GitHub Pages via `.github/workflows/pages.yml` (Settings → Pages → Source: GitHub Actions). Icons are stored as base64 and decoded at deploy time.
 
-Food tab (v3): barcode scan (vendored [html5-qrcode](https://github.com/mebjas/html5-qrcode) 2.3.8, Apache-2.0, in `vendor/`), lookups from the public Open Food Facts API, manual/quick add, and a `FORGE-FOOD: name | 650 kcal | 55P 20F 60C` paste format. Food logs stay on the device like everything else.
+Food tab (v3): barcode scan (v4: own camera pipeline + vendored [@zxing/library](https://github.com/zxing-js/library) 0.23.0, Apache-2.0, in `vendor/`; live camera or still photo), lookups from the public Open Food Facts API, manual/quick add, and a `FORGE-FOOD: name | 650 kcal | 55P 20F 60C` paste format. Food logs stay on the device like everything else.

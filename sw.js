@@ -1,6 +1,6 @@
-const CACHE = 'forge-v3';
+const CACHE = 'forge-v4';
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'starter-plan.json', 'manifest.webmanifest',
-  'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'vendor/html5-qrcode.min.js'];
+  'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'vendor/zxing-library.min.js'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
 });
