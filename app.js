@@ -1,7 +1,7 @@
 /* Forge — offline workout + body-comp log. All data lives in localStorage on this device. */
 'use strict';
 const KEY = 'forge.v1'; // storage key: never change (keeps existing data)
-const APP_VERSION = 'v4 (2026-11-21)';
+const APP_VERSION = 'v5 (2026-11-24)';
 const WD = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const $ = (s, el = document) => el.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -82,7 +82,7 @@ function blank() {
   return { version: 1, created: new Date().toISOString(),
     settings: { theme: 'dark', blockStart: today(), blockWeeks: 4, deloadWeek: 4, defaultRest: 120, unit: 'lb' },
     targets: { kcal: 0, protein: 0, fat: 0, carbs: 0, steps: 0, notes: '' },
-    program: { days: [] }, overrides: {}, sessions: [], body: [], daily: {}, customLib: [], food: { entries: [], foods: [] } };
+    program: { days: [] }, overrides: {}, sessions: [], body: [], daily: {}, customLib: [], food: { entries: [], foods: [] }, cardio: [] };
 }
 let S = load();
 function load() {
@@ -90,7 +90,9 @@ function load() {
   return blank();
 }
 function migrate(d) { const b = blank(); const m = Object.assign(b, d, { settings: Object.assign(b.settings, d.settings || {}), targets: Object.assign(b.targets, d.targets || {}) });
-  m.food = Object.assign({ entries: [], foods: [] }, d.food || {}); return m; }
+  m.food = Object.assign({ entries: [], foods: [] }, d.food || {}); m.cardio = Array.isArray(d.cardio) ? d.cardio : [];
+  if (m.targets && /no sprints or HIIT/i.test(m.targets.notes || '')) m.targets.notes = m.targets.notes.replace(/Zone 2 \/ easy walking only this block \(no sprints or HIIT\)\.?/i, 'Hard conditioning 2x/week after upper-body days (Mon Conditioning A, Thu Conditioning B), never the day before a leg day; zone 2 walks and daily steps alongside.');
+  return m; }
 function save() {
   S.updated = new Date().toISOString();
   try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Save failed: storage full?'); }
@@ -230,6 +232,7 @@ function renderToday(v) {
     h += `<div class="card" style="margin-top:12px"><label>Session notes</label><textarea id="sNotes" style="min-height:70px;font-family:inherit;font-size:16px" placeholder="How it felt, pain, sleep…">${esc(s ? s.notes : '')}</textarea></div>`;
     h += `<div class="card" id="finishCard">${finishCardInner(date)}</div>`;
   }
+  h += cardioCard(date);
   h += dailyCard(date);
   v.innerHTML = h;
   $('#prevD').onclick = () => { curDate = addDays(curDate, -1); render(); };
@@ -421,11 +424,12 @@ function dailyCard(date) {
     <div><label>Protein g</label><input id="dProt" inputmode="numeric" value="${d.protein ?? ''}"></div>
     <div><label>kcal</label><input id="dKcal" inputmode="numeric" value="${d.kcal ?? ''}"></div></div>
     <div class="grid2"><div><label>Weight (lb)</label><input id="dW" inputmode="decimal" value="${bodyOn(date)?.weight ?? ''}"></div>
-    <div><label>Zone 2 min</label><input id="dZ2" inputmode="numeric" value="${d.z2 ?? ''}"></div></div></div>`;
+    <div><label>Zone 2 min (old box; use Cardio above)</label><input id="dZ2" inputmode="numeric" value="${d.z2 ?? ''}"></div></div></div>`;
 }
 const bodyOn = date => S.body.find(b => b.date === date && b.weight != null);
 function bindDaily(date) {
   const upd = (k, el) => { el.onchange = () => { S.daily[date] = S.daily[date] || {}; S.daily[date][k] = num(el.value); save(); toast('Saved'); }; };
+  bindCardio(date);
   upd('steps', $('#dSteps')); upd('protein', $('#dProt')); upd('kcal', $('#dKcal')); upd('z2', $('#dZ2'));
   $('#dW').onchange = e => { const w = num(e.target.value); let b = S.body.find(b => b.date === date && b.source !== 'hume'); if (!b) { b = { id: uid(), date, source: 'scale' }; S.body.push(b); } b.weight = w; S.body.sort((a,b)=>a.date.localeCompare(b.date)); save(); toast('Weight saved'); };
 }
@@ -702,12 +706,49 @@ function summary() {
   lines.push(fd.length ? `Food (targets ${T.kcal || '–'} kcal ${T.p || '–'}P ${T.f || '–'}F ${T.c || '–'}C):` : 'Food: nothing logged in the Food tab');
   fd.forEach(x => lines.push(`- ${x}`));
   const td = foodOn(end); if (td.length) lines.push(`Today's foods: ${td.map(e => `${e.name} ${r0(e.kcal)}`).join('; ')}`);
+  const cw = S.cardio.filter(c => c.date >= start && c.date <= end).sort((a, b) => (a.date + a.t).localeCompare(b.date + b.t));
+  const z2old = dl.reduce((p, x) => p + (x.z2 || 0), 0);
+  lines.push(`Cardio: ${cw.length} session${cw.length === 1 ? '' : 's'}, ${cw.reduce((p, c) => p + (+c.min || 0), 0)} min (${cw.filter(c => c.hard).length} hard)${z2old ? ` + ${z2old} min from Zone 2 box` : ''} · plan: 2 hard (Mon A, Thu B) + 2–3 zone-2 walks`);
+  cw.forEach(c => lines.push(`- ${fmtDate(c.date)} ${cardioLine(c)}`));
   lines.push(`Sessions: ${ss.filter(s => s.entries.some(e => e.sets.some(t => t.done))).length}`);
   ss.forEach(s => { const parts = s.entries.map(e => { const d = e.sets.filter(t => t.done); if (!d.length) return null; const top = d.reduce((m, t) => (t.w || 0) > (m.w || 0) ? t : m, d[0]); return `${e.name} ${d.map(t => `${t.w ?? 'BW'}×${t.r ?? '–'}${t.rir != null ? '@' + t.rir : ''}`).join(', ')}`; }).filter(Boolean);
     if (parts.length) lines.push(`- ${fmtDate(s.date)} ${s.dayName}: ${parts.join('; ')}${s.notes ? ' | ' + s.notes : ''}`); });
   return lines.join('\n');
 }
 
+
+/* ---------- Cardio (v5): plan v1.1 conditioning + manual log ---------- */
+const CARDIO_NOTE = 'Hard conditioning 2x/week after upper-body days (Mon Conditioning A, Thu Conditioning B), never the day before a leg day; zone 2 walks and daily steps alongside.';
+const CARDIO_PLAN = { 1: 'Conditioning A: bike or rower. 3 min easy, 8–10 × 20–30 s hard / 60–90 s easy, 2–3 min easy.', 2: '25–40 min easy zone-2 walk if energy allows.', 3: 'Steps only; no hard finish.',
+  4: 'Conditioning B: incline treadmill sprints (10–15 s / 60–90 s walk) or assault bike (20–30 s / 60–90 s), 6–8 rounds, 3 min easy before and after.', 5: '25–40 min easy zone-2 walk, or steps only.', 6: 'Optional easy walk after the lifts.', 0: 'Easy 30–45 min zone-2 walk + 10 min mobility.' };
+const CARDIO_TYPES = [['z2walk', 'Zone 2 walk', 0], ['incline', 'Incline walk', 0], ['bike', 'Bike (easy)', 0], ['rower', 'Rower (easy)', 0], ['run', 'Run', 0], ['condA', 'Conditioning A (bike/rower intervals)', 1], ['condB', 'Conditioning B (sprints/assault bike)', 1], ['hiit', 'Other HIIT', 1], ['other', 'Other', 0]];
+const cType = k => CARDIO_TYPES.find(x => x[0] === k) || CARDIO_TYPES[CARDIO_TYPES.length - 1];
+function cardioLine(c) { return `${c.label || cType(c.type)[1]} ${c.min} min${c.rounds ? ` · ${c.rounds} rounds` : ''}${c.hr ? ` · avg HR ${c.hr}` : ''}${c.notes ? ` · ${c.notes}` : ''}${c.source && c.source !== 'manual' ? ` [${c.source}]` : ''}`; }
+function weekStart(d) { const x = new Date(d + 'T12:00:00'); const dow = (x.getDay() + 6) % 7; return addDays(d, -dow); }
+function cardioCard(date) {
+  const dow = new Date(date + 'T12:00:00').getDay(), list = S.cardio.filter(c => c.date === date);
+  const ws = weekStart(date), wk = S.cardio.filter(c => c.date >= ws && c.date <= addDays(ws, 6));
+  const bi = blockInfo(date), deload = bi && bi.deload;
+  return `<div class="card" id="cardioCard"><div class="spread"><h3>Cardio</h3><span class="muted small">This week: ${wk.reduce((p, c) => p + (+c.min || 0), 0)} min · ${wk.filter(c => c.hard).length}/2 hard</span></div>
+    <div class="small" style="margin-top:4px"><b>Plan today:</b> ${esc(CARDIO_PLAN[dow])}${deload && (dow === 1 || dow === 4) ? ' (Deload week: 4–6 easier rounds, or swap for a zone-2 walk.)' : ''}</div>
+    ${list.map(c => `<div class="list-item"><div class="grow">${c.hard ? '🔥 ' : ''}${esc(cardioLine(c))}</div><button class="icon danger" data-cdel="${c.id}" aria-label="delete cardio">✕</button></div>`).join('')}
+    <div class="grid2" style="margin-top:6px"><div><label>Type</label><select id="cType">${CARDIO_TYPES.map(t => `<option value="${t[0]}" ${(dow === 1 && t[0] === 'condA') || (dow === 4 && t[0] === 'condB') || (![1, 4].includes(dow) && t[0] === 'z2walk') ? 'selected' : ''}>${t[1]}</option>`).join('')}</select></div>
+      <div><label>Minutes</label><input id="cMin" inputmode="numeric" placeholder="e.g. 30"></div>
+      <div><label>Rounds (intervals)</label><input id="cRounds" inputmode="numeric" placeholder="optional"></div>
+      <div><label>Avg HR</label><input id="cHR" inputmode="numeric" placeholder="optional"></div></div>
+    <label>Notes</label><input id="cNotes" placeholder="optional, e.g. 12% incline 3.2 mph">
+    <div class="row" style="margin-top:8px"><button class="primary grow" id="cLog">Log cardio</button></div></div>`;
+}
+function bindCardio(date) {
+  const c = $('#cardioCard'); if (!c) return;
+  $('#cLog').onclick = () => {
+    const min = num($('#cMin').value); if (!min || min <= 0) return toast('Enter minutes');
+    const t = cType($('#cType').value);
+    S.cardio.push({ id: uid(), date, type: t[0], label: t[1], hard: !!t[2], min, rounds: num($('#cRounds').value), hr: num($('#cHR').value), notes: $('#cNotes').value.trim(), source: 'manual', t: new Date().toISOString() });
+    save(); render(); toast(`Logged ${t[1]} ${min} min`);
+  };
+  c.querySelectorAll('[data-cdel]').forEach(b => b.onclick = () => { if (!confirm('Delete this cardio entry?')) return; S.cardio = S.cardio.filter(x => x.id !== b.dataset.cdel); save(); render(); });
+}
 
 /* ---------- Nutrition (Food tab) ---------- */
 const MEALS = ['breakfast', 'lunch', 'dinner', 'snack'];

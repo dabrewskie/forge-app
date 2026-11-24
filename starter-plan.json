@@ -1,6 +1,6 @@
 {
  "kind": "forge-starter",
- "name": "Block 1 \u00b7 PPL x2",
+ "name": "Block 1 · PPL x2",
  "program": {
   "days": [
    {
@@ -337,7 +337,7 @@
       "notes": ""
      },
      {
-      "name": "45\u00b0 back extension",
+      "name": "45° back extension",
       "sets": 2,
       "repMin": 10,
       "repMax": 15,
@@ -384,7 +384,7 @@
       "notes": ""
      },
      {
-      "name": "45\u00b0 back extension",
+      "name": "45° back extension",
       "sets": 3,
       "repMin": 8,
       "repMax": 12,
@@ -428,6 +428,6 @@
   "fat": 70,
   "carbs": 255,
   "steps": 8000,
-  "notes": "Same calories every day incl. Sunday. Zone 2 / easy walking only this block (no sprints or HIIT). Compounds RIR 2-3, isolation RIR 1-2, no failure on spinal-loaded lifts. Flare rule: pain >3/10 or worse next-morning stiffness -> stop that movement; radiating pain, numbness or leg weakness -> stop the session."
+  "notes": "Same calories every day incl. Sunday. Hard conditioning 2x/week after upper-body days (Mon Conditioning A, Thu Conditioning B), never the day before a leg day; zone 2 walks and daily steps alongside. Compounds RIR 2-3, isolation RIR 1-2, no failure on spinal-loaded lifts. Flare rule: pain >3/10 or worse next-morning stiffness -> stop that movement; radiating pain, numbness or leg weakness -> stop the session."
  }
 }

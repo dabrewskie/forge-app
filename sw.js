@@ -1,4 +1,4 @@
-const CACHE = 'forge-v4';
+const CACHE = 'forge-v5';
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'starter-plan.json', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'vendor/zxing-library.min.js'];
 self.addEventListener('install', e => {
